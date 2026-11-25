@@ -152,7 +152,7 @@
     <button type="button" id="alertDismiss">Dismiss</button>
   </div>
 </div>
-<div class="summary muted" id="priceInfo"></div>
+<div class="summary muted"><span id="priceInfo"></span> <span id="lastAgo"></span></div>
 <div class="summary muted" id="rateInfo"></div>
 <div class="summary" id="summary"></div>
 <table>
@@ -368,6 +368,7 @@
 
   function render() {
     save();
+    showLastAgo();
     const qty = parseFloat(el('qty').value);
     const price = parseFloat(el('price').value);
     prefillAlerts(price);
@@ -482,6 +483,16 @@
   }
   el("refreshMin").addEventListener("change", startTimer);
   startTimer();
+
+  // "Last refresh N min ago" after the price info, updated every 15 s.
+  function showLastAgo() {
+    const c = JSON.parse(localStorage.getItem('priceCache') || '{}');
+    const sym = el('sym').value.trim().toUpperCase();
+    if (!POLYGON_KEY || !c.t || c.sym !== sym) { el('lastAgo').textContent = ''; return; }
+    const m = Math.floor((Date.now() - c.t) / 60000);
+    el('lastAgo').textContent = `· last refresh ${m < 1 ? 'just now' : m + ' min ago'}`;
+  }
+  setInterval(showLastAgo, 15000);
   if (el('gbp').checked) fetchRate();
 </script>
 </body>
