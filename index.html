@@ -60,11 +60,21 @@
   <label>Show £ <input id="gbp" type="checkbox" style="width:auto"></label>
   <label>USD→GBP rate <input id="rate" type="number" min="0" step="any"></label>
   <button type="button" id="refresh">Get live rate</button>
+  <label>Alert above <input id="alertUp" type="number" min="0" step="any" placeholder="price"></label>
+  <label>Alert below <input id="alertDown" type="number" min="0" step="any" placeholder="price"></label>
+  <label>Summary size
+    <select id="sumSize">
+      <option value="1">Normal</option><option value="1.25">Large</option>
+      <option value="1.6">Larger</option><option value="2">Huge</option>
+    </select>
+  </label>
+  <button type="button" id="testSound">Test sound</button>
   <button type="button" id="clear">Clear</button>
 </form>
 
-<div class="summary" id="priceInfo" class="muted"></div>
-<div class="summary" id="rateInfo" class="muted"></div>
+<div class="summary" id="alertInfo" style="color:var(--down);font-weight:bold"></div>
+<div class="summary muted" id="priceInfo"></div>
+<div class="summary muted" id="rateInfo"></div>
 <div class="summary" id="summary"></div>
 <table>
   <thead id="thead"></thead>
@@ -75,7 +85,38 @@
 <script>
   const POLYGON_KEY = (window.POLYGON_KEY || "").trim();
   const KEY = 'stockLadder';
-  const ids = ['sym', 'qty','cost', 'price', 'step', 'custom','mode', 'rows', 'rate', 'rateInfoText'];
+  const ids = ['sym', 'qty','cost', 'price', 'step', 'custom','mode', 'rows', 'rate', 'rateInfoText', 'alertUp', 'alertDown', 'sumSize'];
+
+  // Police-style siren via Web Audio: tone sweeps 650↔1300 Hz for 3 seconds. No sound file needed.
+  let audio;
+  function unlockAudio() { audio = audio || new AudioContext(); if (audio.state === 'suspended') audio.resume(); }
+  function siren(seconds = 3) {
+    unlockAudio();
+    const osc = audio.createOscillator(), gain = audio.createGain(), now = audio.currentTime;
+    osc.type = 'sawtooth';
+    for (let s = 0; s < seconds; s += 0.5) {
+      osc.frequency.setValueAtTime(650, now + s);
+      osc.frequency.linearRampToValueAtTime(1300, now + s + 0.25);
+      osc.frequency.linearRampToValueAtTime(650, now + s + 0.5);
+    }
+    gain.gain.setValueAtTime(0.15, now);
+    gain.gain.setValueAtTime(0.15, now + seconds - 0.05);
+    gain.gain.linearRampToValueAtTime(0, now + seconds);
+    osc.connect(gain).connect(audio.destination);
+    osc.start(now);
+    osc.stop(now + seconds);
+  }
+
+  // One-shot alerts: fire once when a fresh price crosses the level, then clear that level.
+  function checkAlerts(sym, p) {
+    const up = parseFloat(el('alertUp').value), down = parseFloat(el('alertDown').value);
+    const hits = [];
+    if (up > 0 && p >= up) { hits.push(`above ${money(up)}`); el('alertUp').value = ''; }
+    if (down > 0 && p <= down) { hits.push(`below ${money(down)}`); el('alertDown').value = ''; }
+    if (!hits.length) return;
+    el('alertInfo').textContent = `🚨 ${sym} is ${hits.join(' and ')}: now $${money(p)} (${new Date().toLocaleTimeString()})`;
+    siren();
+  }
   const el = id => document.getElementById(id);
   const money = n => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -100,12 +141,12 @@
 
   // One Polygon call: single-ticker snapshot. Latest price = prev close + today's change
   // (reflects last trade incl. extended hours); falls back to last minute bar / day close.
-  async function fetchPrice() {
+  async function fetchPrice(force = false) {
     const sym = el('sym').value.trim().toUpperCase();
     if (!sym || !POLYGON_KEY) return;
     const cache = JSON.parse(localStorage.getItem('priceCache') || '{}');
     const ageMin = (Date.now() - cache.t) / 60000;
-    if (cache.sym === sym && ageMin < 5) {
+    if (!force && cache.sym === sym && ageMin < 5) {
       el('price').value = cache.price;
       el('priceInfo').textContent = cache.info + ` · cached, refreshes in ${Math.ceil(5 - ageMin)} min`;
       render();
@@ -124,6 +165,7 @@
       el('priceInfo').textContent = `${sym} latest $${money(p)} · regular close $${money((t.day && t.day.c) || 0)}` +
         ` · prev close $${money(prev || 0)} · fetched ${new Date().toLocaleTimeString()}`;
       localStorage.setItem('priceCache', JSON.stringify({ sym, price: el('price').value, info: el('priceInfo').textContent, t: Date.now() }));
+      checkAlerts(sym, p);
     } catch (e) {
       el('priceInfo').textContent = `Could not get price for ${sym}: ${e.message}`;
     }
@@ -186,6 +228,7 @@
     }
     if (el('gbp').checked && !(rate > 0)) summary += '<br>Enter or fetch a USD→GBP rate to show £.';
     el('summary').innerHTML = summary;
+    el('summary').style.fontSize = (el('sumSize').value || 1) + 'em';
     el('thead').innerHTML = '<tr><th>Move</th><th>Price</th><th>Value ($)</th>' +
                             (showGbp ? '<th>Value (£)</th>' : '') + '<th>Change vs Now</th>' +
                             (hasCost ? '<th>P/L vs Bought</th>' : '') +
@@ -217,8 +260,9 @@
     localStorage.removeItem(KEY);
     localStorage.removeItem('priceCache');
     el('sym').value = ''; el('priceInfo').textContent = '';
+    el('alertUp').value = ''; el('alertDown').value = ''; el('alertInfo').textContent = '';
     el('qty').value = ''; el('cost').value = ''; el('price').value = '';
-    el('step').value = '1'; el('custom').value = '';el('mode').value = 'amt'; el('rows').value = '10';
+    el('step').value = '1'; el('custom').value = ''; el('sumSize').value = '1';el('mode').value = 'amt'; el('rows').value = '10';
     el('gbp').checked = false; el('rate').value = ''; el('rateInfo').textContent = '';
     render();
   };
@@ -228,8 +272,11 @@
     if (el('gbp').checked && !el('rate').value) fetchRate(); else render();
   });
   el('refresh').onclick = fetchRate;
-  el('getPrice').onclick = fetchPrice;
-  el('sym').addEventListener('keydown', e => { if (e.key === 'Enter') fetchPrice(); });
+  el('testSound').onclick = () => siren();
+  // Browsers only allow sound after the user interacts with the page once.
+  ['click', 'keydown'].forEach(ev => document.addEventListener(ev, unlockAudio, { once: true }));
+  el('getPrice').onclick = () => fetchPrice(true); // manual click always fetches fresh
+  el('sym').addEventListener('keydown', e => { if (e.key === 'Enter') fetchPrice(true); });
   load();
   render();
   if (!POLYGON_KEY) { el("symBox").style.display = "none"; el("getPrice").style.display = "none"; }
