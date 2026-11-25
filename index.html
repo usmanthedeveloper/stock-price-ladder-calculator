@@ -13,8 +13,16 @@
   body { font-family: system-ui, sans-serif; max-width: 900px; margin: 24px auto; padding: 0 16px;
          background: var(--bg); color: var(--text); line-height: 1.4; }
   h1 { font-size: 1.4rem; color: var(--accent); font-weight: 600; }
-  form { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin-bottom: 16px;
-         background: var(--panel); padding: 14px; border-radius: 10px; }
+  form { background: var(--panel); padding: 6px 14px 14px; border-radius: 10px; margin-bottom: 16px; }
+  fieldset { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; border: 0; border-top: 1px solid var(--line);
+             margin: 0; padding: 10px 0 12px; }
+  fieldset:first-child { border-top: 0; }
+  legend { color: var(--accent); font-size: .8rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; padding: 0 6px 0 0; }
+  details { border-top: 1px solid var(--line); padding-top: 10px; }
+  details fieldset { border-top: 0; }
+  summary { cursor: pointer; color: var(--muted); font-size: .8rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+  summary:hover { color: var(--accent); }
+  .actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; border-top: 1px solid var(--line); padding-top: 12px; margin-top: 10px; }
   label { display: flex; flex-direction: column; font-size: .8rem; gap: 4px; color: var(--muted); }
   input, select, button { font-size: 1rem; padding: 6px 8px; border-radius: 6px;
          border: 1px solid var(--line); background: var(--bg); color: var(--text); }
@@ -38,38 +46,76 @@
 <h1>Stock Price Ladder</h1>
 
 <form id="f" onsubmit="return false">
-  <label id="symBox">Symbol <input id="sym" type="text" style="text-transform:uppercase"></label>
-  <button type="button" id="getPrice">Get price</button>
-  <label>Quantity <input id="qty" type="number" min="0" step="any"></label>
-  <label>Bought at <input id="cost" type="number" min="0" step="any" placeholder="optional"></label>
-  <label>Current price <input id="price" type="number" min="0" step="any"></label>
-  <label>Step
-    <select id="step">
-      <option>0.5</option><option selected>1</option><option>2</option>
-      <option>5</option><option>10</option><option>20</option><option>50</option>
-    </select>
-  </label>
-  <label>Custom step <input id="custom" type="number" min="0" step="any" placeholder="optional"></label>
-  <label>Step type
-    <select id="mode">
-      <option value="amt">Price amount</option>
-      <option value="pct">Percent %</option>
-    </select>
-  </label>
-  <label>Rows each way <input id="rows" type="number" min="1" max="100" value="10"></label>
-  <label>Show £ <input id="gbp" type="checkbox" style="width:auto"></label>
-  <label>USD→GBP rate <input id="rate" type="number" min="0" step="any"></label>
-  <button type="button" id="refresh">Get live rate</button>
-  <label>Alert above <input id="alertUp" type="number" min="0" step="any" placeholder="price"></label>
-  <label>Alert below <input id="alertDown" type="number" min="0" step="any" placeholder="price"></label>
-  <label>Summary size
-    <select id="sumSize">
-      <option value="1">Normal</option><option value="1.25">Large</option>
-      <option value="1.6">Larger</option><option value="2">Huge</option>
-    </select>
-  </label>
-  <button type="button" id="testSound">Test sound</button>
-  <button type="button" id="clear">Clear</button>
+  <fieldset>
+    <legend>Position</legend>
+    <label id="symBox">Symbol <input id="sym" type="text" style="text-transform:uppercase"></label>
+    <button type="button" id="getPrice">Get price</button>
+    <label>Quantity <input id="qty" type="number" min="0" step="any"></label>
+    <label>Bought at <input id="cost" type="number" min="0" step="any" placeholder="optional"></label>
+    <label>Current price <input id="price" type="number" min="0" step="any"></label>
+  </fieldset>
+
+  <details id="ladderBox">
+    <summary>Ladder</summary>
+    <fieldset>
+    <label>Step
+      <select id="step">
+        <option>0.5</option><option selected>1</option><option>2</option>
+        <option>5</option><option>10</option><option>20</option><option>50</option>
+      </select>
+    </label>
+    <label>Custom step <input id="custom" type="number" min="0" step="any" placeholder="optional"></label>
+    <label>Step type
+      <select id="mode">
+        <option value="amt">Price amount</option>
+        <option value="pct">Percent %</option>
+      </select>
+    </label>
+    <label>Rows each way <input id="rows" type="number" min="1" max="100" value="10"></label>
+    </fieldset>
+  </details>
+
+  <details id="alertsBox">
+    <summary>Alerts</summary>
+    <fieldset>
+      <label>Alert above <input id="alertUp" type="number" min="0" step="any" placeholder="price"></label>
+      <label>Alert below <input id="alertDown" type="number" min="0" step="any" placeholder="price"></label>
+      <button type="button" id="testSound">Test sound</button>
+    </fieldset>
+  </details>
+
+  <details id="settings">
+    <summary>Settings</summary>
+    <fieldset>
+      <label id="refreshBox">Auto refresh
+        <select id="refreshMin">
+          <option value="0">Off</option><option value="1">1 min</option><option value="2">2 min</option>
+          <option value="5" selected>5 min</option><option value="10">10 min</option><option value="15">15 min</option><option value="30">30 min</option>
+        </select>
+      </label>
+      <label>Show £ <input id="gbp" type="checkbox" style="width:auto"></label>
+      <label>USD→GBP rate <input id="rate" type="number" min="0" step="any"></label>
+      <button type="button" id="refresh">Get live rate</button>
+      <label>Summary size
+        <select id="sumSize">
+          <option value="1">Normal</option><option value="1.25">Large</option>
+          <option value="1.6">Larger</option><option value="2">Huge</option>
+        </select>
+      </label>
+    </fieldset>
+  </details>
+
+  <details id="histBox">
+    <summary>History</summary>
+    <fieldset>
+      <label>Saved inputs <select id="history" style="max-width:300px"></select></label>
+      <button type="button" id="restore">Restore</button>
+    </fieldset>
+  </details>
+
+  <div class="actions">
+    <button type="button" id="clear">Clear</button>
+  </div>
 </form>
 
 <div class="summary" id="alertInfo" style="color:var(--down);font-weight:bold"></div>
@@ -85,7 +131,8 @@
 <script>
   const POLYGON_KEY = (window.POLYGON_KEY || "").trim();
   const KEY = 'stockLadder';
-  const ids = ['sym', 'qty','cost', 'price', 'step', 'custom','mode', 'rows', 'rate', 'rateInfoText', 'alertUp', 'alertDown', 'sumSize'];
+  const ids = ['sym', 'qty','cost', 'price', 'step', 'custom','mode', 'rows', 'rate', 'rateInfoText', 'alertUp', 'alertDown', 'sumSize', 'refreshMin'];
+  const ttlMin = () => parseFloat(el('refreshMin').value) || 5; // cache lifetime follows refresh (5 if Off)
 
   // Police-style siren via Web Audio: tone sweeps 650↔1300 Hz for 3 seconds. No sound file needed.
   let audio;
@@ -122,8 +169,7 @@
 
   const gbpFmt = n => '£' + money(n);
 
-  function load() {
-    const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
+  function load(saved = JSON.parse(localStorage.getItem(KEY) || '{}')) {
     ids.forEach(id => {
       if (saved[id] === undefined) return;
       if (id === 'rateInfoText') el('rateInfo').textContent = saved[id];
@@ -139,6 +185,37 @@
     localStorage.setItem(KEY, JSON.stringify(data));
   }
 
+  // History: Clear saves the current inputs here (newest first, max 5) so they can be restored.
+  const HKEY = 'stockLadderHistory';
+  const getHistory = () => JSON.parse(localStorage.getItem(HKEY) || '[]');
+
+  function pushHistory() {
+    save();
+    const data = JSON.parse(localStorage.getItem(KEY) || '{}');
+    if (!data.qty && !data.price && !data.sym) return; // nothing worth keeping
+    const h = getHistory();
+    h.unshift({ t: Date.now(), data });
+    localStorage.setItem(HKEY, JSON.stringify(h.slice(0, 5)));
+  }
+
+  function renderHistory() {
+    const h = getHistory();
+    el('histBox').style.display = el('restore').style.display = h.length ? '' : 'none';
+    el('history').innerHTML = h.map((e, i) => {
+      const d = e.data, when = new Date(e.t).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+      return `<option value="${i}">${when} · ${d.sym || '—'} · ${d.qty || 0} @ ${d.price || '?'}</option>`;
+    }).join('');
+  }
+
+  function restoreHistory() {
+    const e = getHistory()[el('history').value];
+    if (!e) return;
+    load(e.data);
+    startTimer();
+    render();
+    fetchPrice();
+  }
+
   // One Polygon call: single-ticker snapshot. Latest price = prev close + today's change
   // (reflects last trade incl. extended hours); falls back to last minute bar / day close.
   async function fetchPrice(force = false) {
@@ -146,9 +223,9 @@
     if (!sym || !POLYGON_KEY) return;
     const cache = JSON.parse(localStorage.getItem('priceCache') || '{}');
     const ageMin = (Date.now() - cache.t) / 60000;
-    if (!force && cache.sym === sym && ageMin < 5) {
+    if (!force && cache.sym === sym && ageMin < ttlMin()) {
       el('price').value = cache.price;
-      el('priceInfo').textContent = cache.info + ` · cached, refreshes in ${Math.ceil(5 - ageMin)} min`;
+      el('priceInfo').textContent = cache.info + ` · cached, refreshes in ${Math.ceil(ttlMin() - ageMin)} min`;
       render();
       return;
     }
@@ -257,12 +334,13 @@
   }
 
   el('clear').onclick = () => {
+    pushHistory(); renderHistory();
     localStorage.removeItem(KEY);
     localStorage.removeItem('priceCache');
     el('sym').value = ''; el('priceInfo').textContent = '';
     el('alertUp').value = ''; el('alertDown').value = ''; el('alertInfo').textContent = '';
     el('qty').value = ''; el('cost').value = ''; el('price').value = '';
-    el('step').value = '1'; el('custom').value = ''; el('sumSize').value = '1';el('mode').value = 'amt'; el('rows').value = '10';
+    el('step').value = '1'; el('custom').value = ''; el('sumSize').value = '1'; el('refreshMin').value = '5'; startTimer();el('mode').value = 'amt'; el('rows').value = '10';
     el('gbp').checked = false; el('rate').value = ''; el('rateInfo').textContent = '';
     render();
   };
@@ -277,11 +355,26 @@
   ['click', 'keydown'].forEach(ev => document.addEventListener(ev, unlockAudio, { once: true }));
   el('getPrice').onclick = () => fetchPrice(true); // manual click always fetches fresh
   el('sym').addEventListener('keydown', e => { if (e.key === 'Enter') fetchPrice(true); });
+  el('restore').onclick = restoreHistory;
   load();
+  renderHistory();
+  // Collapsible sections start collapsed; remember if opened.
+  ["ladderBox", "alertsBox", "settings", "histBox"].forEach(id => {
+    el(id).open = localStorage.getItem(id + "Open") === "1";
+    el(id).addEventListener("toggle", () => localStorage.setItem(id + "Open", el(id).open ? "1" : "0"));
+  });
   render();
-  if (!POLYGON_KEY) { el("symBox").style.display = "none"; el("getPrice").style.display = "none"; }
+  if (!POLYGON_KEY) { el("symBox").style.display = "none"; el("refreshBox").style.display = "none"; el("getPrice").style.display = "none"; }
   fetchPrice(); // one call per page load (only if a symbol is saved)
-  setInterval(fetchPrice, 5 * 60 * 1000 + 2000); // auto-refresh price every 5 min (just after cache expires)
+  // Auto-refresh timer; restarts when the interval option changes.
+  let timer;
+  function startTimer() {
+    clearInterval(timer);
+    const m = parseFloat(el("refreshMin").value);
+    if (m > 0) timer = setInterval(fetchPrice, m * 60 * 1000 + 2000);
+  }
+  el("refreshMin").addEventListener("change", startTimer);
+  startTimer();
   if (el('gbp').checked) fetchRate();
 </script>
 </body>

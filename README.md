@@ -12,13 +12,15 @@ Open `index.html` in a browser. No build or server needed.
 - Tick **Show £** to convert values to GBP using a live USD→GBP rate (free ECB rates, no key needed).
 - Use **Summary size** to enlarge the value / cost / P/L line.
 - Inputs are saved in your browser as you type, until you press **Clear**.
+- **Clear** stores the current inputs in **History** (last 5, newest first) so you can restore them.
+- Ladder, Alerts, Settings and History are collapsible sections; only Position is always shown.
 
 ## Live prices (optional)
 
 Copy `config.example.js` to `config.js` and add your [Polygon / Massive](https://polygon.io) API key.
 The page then shows a Symbol box that fetches the latest price (including extended hours).
 
-- Fetches once on page load and auto-refreshes every 5 minutes, using a 5-minute cache to save API calls.
+- Fetches once on page load and auto-refreshes (Off / 1–30 min, default 5) with a matching cache to save API calls.
 - **Get price** (or Enter in the Symbol box) always fetches fresh and resets the cache.
 - Without a key, the Symbol box is hidden and you type the price in yourself.
 
