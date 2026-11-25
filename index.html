@@ -94,8 +94,8 @@
       <label>Alert below <span id="alertDownState" class="state"></span><input id="alertDown" type="number" min="0" step="1" placeholder="price"></label>
       <label>Sound
         <select id="alertSound">
+          <option value="tap" selected>Soft tap</option>
           <option value="siren">Police siren</option>
-          <option value="tap">Soft tap</option>
         </select>
       </label>
       <label>Play
@@ -438,7 +438,7 @@
     el('sym').value = ''; el('priceInfo').textContent = '';
     el('alertUp').value = ''; el('alertDown').value = ''; el('alertInfo').textContent = '';
     localStorage.removeItem(AKEY); showAlertState();
-    el('alertSound').value = 'siren'; el('alertRepeat').value = 'once'; dismissAlarm();
+    el('alertSound').value = 'tap'; el('alertRepeat').value = 'once'; dismissAlarm();
     el('qty').value = ''; el('cost').value = ''; el('price').value = '';
     el('step').value = '1'; el('custom').value = ''; el('sumSize').value = '1'; el('refreshMin').value = '5'; startTimer();el('mode').value = 'amt'; el('rows').value = '10';
     el('gbp').checked = false; el('rate').value = ''; el('rateInfo').textContent = '';
