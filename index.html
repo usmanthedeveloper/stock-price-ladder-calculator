@@ -45,6 +45,13 @@
   .state.fired { color: var(--down); }
   input.armed { border-color: var(--accent); }
   input.fired { border-color: var(--down); }
+  #alertModal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6);
+                align-items: center; justify-content: center; z-index: 10; }
+  #alertModal .box { background: var(--panel); border: 2px solid var(--down); border-radius: 12px;
+                     padding: 24px 28px; text-align: center; max-width: 90vw; }
+  #alertModal h2 { margin: 0 0 8px; color: var(--down); }
+  #alertModalPrice { font-size: 2.4rem; font-weight: bold; margin: 8px 0; }
+  #alertModal button { margin-top: 12px; font-size: 1.1rem; padding: 8px 24px; }
 </style>
 </head>
 <body>
@@ -85,6 +92,18 @@
     <fieldset>
       <label>Alert above <span id="alertUpState" class="state"></span><input id="alertUp" type="number" min="0" step="1" placeholder="price"></label>
       <label>Alert below <span id="alertDownState" class="state"></span><input id="alertDown" type="number" min="0" step="1" placeholder="price"></label>
+      <label>Sound
+        <select id="alertSound">
+          <option value="siren">Police siren</option>
+          <option value="tap">Soft tap</option>
+        </select>
+      </label>
+      <label>Play
+        <select id="alertRepeat">
+          <option value="once">Once</option>
+          <option value="loop">Until dismissed (max 7 min)</option>
+        </select>
+      </label>
       <button type="button" id="testSound">Test sound</button>
     </fieldset>
   </details>
@@ -124,6 +143,15 @@
 </form>
 
 <div class="summary" id="alertInfo" style="color:var(--down);font-weight:bold"></div>
+<div id="alertModal">
+  <div class="box">
+    <h2>🚨 Price alert</h2>
+    <div id="alertModalText"></div>
+    <div id="alertModalPrice"></div>
+    <div id="alertModalNote" class="muted"></div>
+    <button type="button" id="alertDismiss">Dismiss</button>
+  </div>
+</div>
 <div class="summary muted" id="priceInfo"></div>
 <div class="summary muted" id="rateInfo"></div>
 <div class="summary" id="summary"></div>
@@ -136,7 +164,7 @@
 <script>
   const POLYGON_KEY = (window.POLYGON_KEY || "").trim();
   const KEY = 'stockLadder';
-  const ids = ['sym', 'qty','cost', 'price', 'step', 'custom','mode', 'rows', 'rate', 'rateInfoText', 'alertUp', 'alertDown', 'sumSize', 'refreshMin'];
+  const ids = ['sym', 'qty','cost', 'price', 'step', 'custom','mode', 'rows', 'rate', 'rateInfoText', 'alertUp', 'alertDown', 'sumSize', 'refreshMin', 'alertSound', 'alertRepeat'];
   const ttlMin = () => parseFloat(el('refreshMin').value) || 5; // cache lifetime follows refresh (5 if Off)
 
   // Police-style siren via Web Audio: tone sweeps 650↔1300 Hz for 3 seconds. No sound file needed.
@@ -157,6 +185,42 @@
     osc.connect(gain).connect(audio.destination);
     osc.start(now);
     osc.stop(now + seconds);
+  }
+
+  // Soft tap: short gentle blip.
+  function tap() {
+    unlockAudio();
+    const osc = audio.createOscillator(), gain = audio.createGain(), now = audio.currentTime;
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, now);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.25, now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.15);
+    osc.connect(gain).connect(audio.destination);
+    osc.start(now);
+    osc.stop(now + 0.16);
+  }
+  const playAlertSound = () => el('alertSound').value === 'tap' ? tap() : siren();
+
+  // Alarm: pop-up with the price; sound plays once, or every 3 s until dismissed (max 7 min).
+  const MAX_ALARM_MS = 7 * 60 * 1000;
+  let alarmLoop, alarmCutoff;
+  function stopAlarmSound() { clearInterval(alarmLoop); clearTimeout(alarmCutoff); }
+  function dismissAlarm() { stopAlarmSound(); el('alertModal').style.display = 'none'; }
+  function startAlarm(msg, p) {
+    stopAlarmSound();
+    el('alertModalText').textContent = msg;
+    el('alertModalPrice').textContent = '$' + money(p);
+    el('alertModalNote').textContent = new Date().toLocaleTimeString();
+    el('alertModal').style.display = 'flex';
+    playAlertSound();
+    if (el('alertRepeat').value === 'loop') {
+      alarmLoop = setInterval(playAlertSound, 3000); // siren lasts 3 s, so it plays back-to-back
+      alarmCutoff = setTimeout(() => {
+        stopAlarmSound();
+        el('alertModalNote').textContent += ' · sound stopped after 7 min';
+      }, MAX_ALARM_MS);
+    }
   }
 
   // Alerts: boxes default to the current price (whole number) but are OFF until the user changes them.
@@ -192,8 +256,9 @@
     if (st.alertUp === 'armed' && up > 0 && p >= up) { hits.push(`above ${money(up)}`); setAlertState('alertUp', 'fired'); }
     if (st.alertDown === 'armed' && down > 0 && p <= down) { hits.push(`below ${money(down)}`); setAlertState('alertDown', 'fired'); }
     if (!hits.length) return;
-    el('alertInfo').textContent = `🚨 ${sym} is ${hits.join(' and ')}: now $${money(p)} (${new Date().toLocaleTimeString()})`;
-    siren();
+    const msg = `${sym} is ${hits.join(' and ')}`;
+    el('alertInfo').textContent = `🚨 ${msg}: now $${money(p)} (${new Date().toLocaleTimeString()})`;
+    startAlarm(msg, p);
   }
   const el = id => document.getElementById(id);
   const money = n => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -373,6 +438,7 @@
     el('sym').value = ''; el('priceInfo').textContent = '';
     el('alertUp').value = ''; el('alertDown').value = ''; el('alertInfo').textContent = '';
     localStorage.removeItem(AKEY); showAlertState();
+    el('alertSound').value = 'siren'; el('alertRepeat').value = 'once'; dismissAlarm();
     el('qty').value = ''; el('cost').value = ''; el('price').value = '';
     el('step').value = '1'; el('custom').value = ''; el('sumSize').value = '1'; el('refreshMin').value = '5'; startTimer();el('mode').value = 'amt'; el('rows').value = '10';
     el('gbp').checked = false; el('rate').value = ''; el('rateInfo').textContent = '';
@@ -384,7 +450,8 @@
     if (el('gbp').checked && !el('rate').value) fetchRate(); else render();
   });
   el('refresh').onclick = fetchRate;
-  el('testSound').onclick = () => siren();
+  el('testSound').onclick = () => playAlertSound();
+  el('alertDismiss').onclick = dismissAlarm;
   // Browsers only allow sound after the user interacts with the page once.
   ['click', 'keydown'].forEach(ev => document.addEventListener(ev, unlockAudio, { once: true }));
   el('getPrice').onclick = () => fetchPrice(true); // manual click always fetches fresh
