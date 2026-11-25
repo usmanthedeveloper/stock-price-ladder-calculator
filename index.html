@@ -40,6 +40,11 @@
   .down { color: var(--down); }
   .summary { margin: 8px 0 16px; }
   .muted { font-size: .85rem; color: var(--muted); }
+  .state { font-size: .75rem; }
+  .state.armed { color: var(--accent); }
+  .state.fired { color: var(--down); }
+  input.armed { border-color: var(--accent); }
+  input.fired { border-color: var(--down); }
 </style>
 </head>
 <body>
@@ -78,8 +83,8 @@
   <details id="alertsBox">
     <summary>Alerts</summary>
     <fieldset>
-      <label>Alert above <input id="alertUp" type="number" min="0" step="any" placeholder="price"></label>
-      <label>Alert below <input id="alertDown" type="number" min="0" step="any" placeholder="price"></label>
+      <label>Alert above <span id="alertUpState" class="state"></span><input id="alertUp" type="number" min="0" step="1" placeholder="price"></label>
+      <label>Alert below <span id="alertDownState" class="state"></span><input id="alertDown" type="number" min="0" step="1" placeholder="price"></label>
       <button type="button" id="testSound">Test sound</button>
     </fieldset>
   </details>
@@ -154,12 +159,38 @@
     osc.stop(now + seconds);
   }
 
-  // One-shot alerts: fire once when a fresh price crosses the level, then clear that level.
+  // Alerts: boxes default to the current price (whole number) but are OFF until the user changes them.
+  // Changing a box arms it. When it fires, the value stays but the alert turns off until changed again.
+  // State per box: '' = off (not set), 'armed', 'fired'.
+  const AKEY = 'alertState';
+  const alertState = () => JSON.parse(localStorage.getItem(AKEY) || '{}');
+  function setAlertState(id, s) {
+    const st = alertState(); st[id] = s; localStorage.setItem(AKEY, JSON.stringify(st));
+    showAlertState();
+  }
+  function showAlertState() {
+    const st = alertState();
+    ['alertUp', 'alertDown'].forEach(id => {
+      const s = st[id] || '';
+      el(id).className = s;
+      el(id + 'State').className = 'state ' + s;
+      el(id + 'State').textContent = s === 'armed' ? '· on' : s === 'fired' ? '· triggered, change to re-set' : '· off';
+    });
+  }
+  function prefillAlerts(price) {
+    if (!(price > 0)) return;
+    const st = alertState();
+    ['alertUp', 'alertDown'].forEach(id => {
+      if (!st[id] && !el(id).value) el(id).value = Math.round(price); // default, stays off
+    });
+  }
+
   function checkAlerts(sym, p) {
+    const st = alertState();
     const up = parseFloat(el('alertUp').value), down = parseFloat(el('alertDown').value);
     const hits = [];
-    if (up > 0 && p >= up) { hits.push(`above ${money(up)}`); el('alertUp').value = ''; }
-    if (down > 0 && p <= down) { hits.push(`below ${money(down)}`); el('alertDown').value = ''; }
+    if (st.alertUp === 'armed' && up > 0 && p >= up) { hits.push(`above ${money(up)}`); setAlertState('alertUp', 'fired'); }
+    if (st.alertDown === 'armed' && down > 0 && p <= down) { hits.push(`below ${money(down)}`); setAlertState('alertDown', 'fired'); }
     if (!hits.length) return;
     el('alertInfo').textContent = `🚨 ${sym} is ${hits.join(' and ')}: now $${money(p)} (${new Date().toLocaleTimeString()})`;
     siren();
@@ -211,6 +242,7 @@
     const e = getHistory()[el('history').value];
     if (!e) return;
     load(e.data);
+    localStorage.removeItem(AKEY); showAlertState(); // restored alerts start off
     startTimer();
     render();
     fetchPrice();
@@ -273,6 +305,7 @@
     save();
     const qty = parseFloat(el('qty').value);
     const price = parseFloat(el('price').value);
+    prefillAlerts(price);
     const custom = parseFloat(el('custom').value);
     const step = custom > 0 ? custom : parseFloat(el('step').value);
     const pct = el('mode').value === 'pct';
@@ -296,7 +329,7 @@
     const showGbp = el('gbp').checked && rate > 0;
     const gb = n => showGbp ? ` <span class="muted">(${n < 0 ? '−' : ''}${gbpFmt(Math.abs(n) * rate)})</span>` : '';
 
-    let summary = `Current value: <b>$${money(base)}</b>${gb(base)} (${qty} × $${money(price)})`;
+    let summary = `Current value: <b>$${money(base)}</b>${gb(base)} (${qty} × <span class="${hasCost ? color(price - cost) : ''}">$${money(price)}</span>)`;
     if (hasCost) {
       const pl = base - costTotal;
       summary += ` &nbsp;|&nbsp; Cost: <b>$${money(costTotal)}</b>${gb(costTotal)} (${qty} × $${money(cost)})` +
@@ -339,6 +372,7 @@
     localStorage.removeItem('priceCache');
     el('sym').value = ''; el('priceInfo').textContent = '';
     el('alertUp').value = ''; el('alertDown').value = ''; el('alertInfo').textContent = '';
+    localStorage.removeItem(AKEY); showAlertState();
     el('qty').value = ''; el('cost').value = ''; el('price').value = '';
     el('step').value = '1'; el('custom').value = ''; el('sumSize').value = '1'; el('refreshMin').value = '5'; startTimer();el('mode').value = 'amt'; el('rows').value = '10';
     el('gbp').checked = false; el('rate').value = ''; el('rateInfo').textContent = '';
@@ -356,8 +390,14 @@
   el('getPrice').onclick = () => fetchPrice(true); // manual click always fetches fresh
   el('sym').addEventListener('keydown', e => { if (e.key === 'Enter') fetchPrice(true); });
   el('restore').onclick = restoreHistory;
+  // User changing an alert box (typing or arrows) turns it on; emptying it turns it off.
+  ['alertUp', 'alertDown'].forEach(id => el(id).addEventListener('input', () => {
+    setAlertState(id, parseFloat(el(id).value) > 0 ? 'armed' : '');
+    el('alertInfo').textContent = '';
+  }));
   load();
   renderHistory();
+  showAlertState();
   // Collapsible sections start collapsed; remember if opened.
   ["ladderBox", "alertsBox", "settings", "histBox"].forEach(id => {
     el(id).open = localStorage.getItem(id + "Open") === "1";
