@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stock Price Ladder</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231e2a36'/%3E%3Cpolyline points='5,23 12,16 17,20 27,9' fill='none' stroke='%234fd1a5' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpolyline points='21,9 27,9 27,15' fill='none' stroke='%234fd1a5' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #1a222b; --panel: #222c37; --line: #2f3b48; --text: #d7dee6; --muted: #8c99a6;
+    --accent: #4fd1a5; --up: #5fd38d; --down: #f2867c; --hl: #2c3a2f;
+  }
+  body { font-family: system-ui, sans-serif; max-width: 900px; margin: 24px auto; padding: 0 16px;
+         background: var(--bg); color: var(--text); line-height: 1.4; }
+  h1 { font-size: 1.4rem; color: var(--accent); font-weight: 600; }
+  form { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin-bottom: 16px;
+         background: var(--panel); padding: 14px; border-radius: 10px; }
+  label { display: flex; flex-direction: column; font-size: .8rem; gap: 4px; color: var(--muted); }
+  input, select, button { font-size: 1rem; padding: 6px 8px; border-radius: 6px;
+         border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
+  input { width: 110px; }
+  button { cursor: pointer; background: var(--line); }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums;
+          background: var(--panel); border-radius: 10px; overflow: hidden; }
+  th, td { padding: 7px 10px; text-align: right; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 500; font-size: .85rem; }
+  tbody tr:hover { background: #26323e; }
+  tr.current { background: var(--hl); font-weight: bold; }
+  .up { color: var(--up); }
+  .down { color: var(--down); }
+  .summary { margin: 8px 0 16px; }
+  .muted { font-size: .85rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<h1>Stock Price Ladder</h1>
+
+<form id="f" onsubmit="return false">
+  <label id="symBox">Symbol <input id="sym" type="text" style="text-transform:uppercase"></label>
+  <button type="button" id="getPrice">Get price</button>
+  <label>Quantity <input id="qty" type="number" min="0" step="any"></label>
+  <label>Bought at <input id="cost" type="number" min="0" step="any" placeholder="optional"></label>
+  <label>Current price <input id="price" type="number" min="0" step="any"></label>
+  <label>Step
+    <select id="step">
+      <option>0.5</option><option selected>1</option><option>2</option>
+      <option>5</option><option>10</option><option>20</option><option>50</option>
+    </select>
+  </label>
+  <label>Custom step <input id="custom" type="number" min="0" step="any" placeholder="optional"></label>
+  <label>Step type
+    <select id="mode">
+      <option value="amt">Price amount</option>
+      <option value="pct">Percent %</option>
+    </select>
+  </label>
+  <label>Rows each way <input id="rows" type="number" min="1" max="100" value="10"></label>
+  <label>Show £ <input id="gbp" type="checkbox" style="width:auto"></label>
+  <label>USD→GBP rate <input id="rate" type="number" min="0" step="any"></label>
+  <button type="button" id="refresh">Get live rate</button>
+  <button type="button" id="clear">Clear</button>
+</form>
+
+<div class="summary" id="priceInfo" class="muted"></div>
+<div class="summary" id="rateInfo" class="muted"></div>
+<div class="summary" id="summary"></div>
+<table>
+  <thead id="thead"></thead>
+  <tbody id="tbody"></tbody>
+</table>
+
+<script src="config.js"></script>
+<script>
+  const POLYGON_KEY = (window.POLYGON_KEY || "").trim();
+  const KEY = 'stockLadder';
+  const ids = ['sym', 'qty','cost', 'price', 'step', 'custom','mode', 'rows', 'rate', 'rateInfoText'];
+  const el = id => document.getElementById(id);
+  const money = n => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const gbpFmt = n => '£' + money(n);
+
+  function load() {
+    const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
+    ids.forEach(id => {
+      if (saved[id] === undefined) return;
+      if (id === 'rateInfoText') el('rateInfo').textContent = saved[id];
+      else el(id).value = saved[id];
+    });
+    el('gbp').checked = !!saved.gbp;
+  }
+
+  function save() {
+    const data = {};
+    ids.forEach(id => data[id] = id === 'rateInfoText' ? el('rateInfo').textContent : el(id).value);
+    data.gbp = el('gbp').checked;
+    localStorage.setItem(KEY, JSON.stringify(data));
+  }
+
+  // One Polygon call: single-ticker snapshot. Latest price = prev close + today's change
+  // (reflects last trade incl. extended hours); falls back to last minute bar / day close.
+  async function fetchPrice() {
+    const sym = el('sym').value.trim().toUpperCase();
+    if (!sym || !POLYGON_KEY) return;
+    const cache = JSON.parse(localStorage.getItem('priceCache') || '{}');
+    const ageMin = (Date.now() - cache.t) / 60000;
+    if (cache.sym === sym && ageMin < 5) {
+      el('price').value = cache.price;
+      el('priceInfo').textContent = cache.info + ` · cached, refreshes in ${Math.ceil(5 - ageMin)} min`;
+      render();
+      return;
+    }
+    el('priceInfo').textContent = `Fetching ${sym}…`;
+    try {
+      const r = await fetch(`https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers/${encodeURIComponent(sym)}?apiKey=${POLYGON_KEY}`);
+      const j = await r.json();
+      const t = j.ticker;
+      if (!t) throw new Error(j.error || j.message || j.status || 'No data');
+      const prev = t.prevDay && t.prevDay.c;
+      let p = prev && t.todaysChange != null ? prev + t.todaysChange : 0;
+      if (!(p > 0)) p = (t.min && t.min.c) || (t.day && t.day.c) || prev;
+      el('price').value = +p.toFixed(4);
+      el('priceInfo').textContent = `${sym} latest $${money(p)} · regular close $${money((t.day && t.day.c) || 0)}` +
+        ` · prev close $${money(prev || 0)} · fetched ${new Date().toLocaleTimeString()}`;
+      localStorage.setItem('priceCache', JSON.stringify({ sym, price: el('price').value, info: el('priceInfo').textContent, t: Date.now() }));
+    } catch (e) {
+      el('priceInfo').textContent = `Could not get price for ${sym}: ${e.message}`;
+    }
+    render();
+  }
+
+  async function fetchRate() {
+    el('rateInfo').textContent = 'Fetching live rate…';
+    try {
+      const r = await fetch('https://api.frankfurter.dev/v1/latest?from=USD&to=GBP');
+      const j = await r.json();
+      el('rate').value = j.rates.GBP;
+      el('rateInfo').textContent = `Rate 1 USD = ${j.rates.GBP} GBP (ECB, ${j.date})`;
+    } catch {
+      try {
+        const r = await fetch('https://open.er-api.com/v6/latest/USD');
+        const j = await r.json();
+        el('rate').value = j.rates.GBP;
+        el('rateInfo').textContent = `Rate 1 USD = ${j.rates.GBP} GBP (${new Date(j.time_last_update_unix * 1000).toLocaleDateString()})`;
+      } catch {
+        el('rateInfo').textContent = 'Could not fetch live rate — enter it manually.';
+      }
+    }
+    render();
+  }
+
+  function render() {
+    save();
+    const qty = parseFloat(el('qty').value);
+    const price = parseFloat(el('price').value);
+    const custom = parseFloat(el('custom').value);
+    const step = custom > 0 ? custom : parseFloat(el('step').value);
+    const pct = el('mode').value === 'pct';
+    const rows = Math.min(Math.max(parseInt(el('rows').value) || 10, 1), 100);
+    const tbody = el('tbody');
+    tbody.innerHTML = '';
+
+    if (!(qty > 0) || !(price > 0)) {
+      el('summary').textContent = 'Enter quantity and price.';
+      el('thead').innerHTML = '';
+      return;
+    }
+    const cost = parseFloat(el('cost').value);
+    const hasCost = cost > 0;
+    const costTotal = hasCost ? qty * cost : 0;
+    const base = qty * price;
+    const sign = n => n > 0 ? '+' : '';
+    const color = n => n > 0 ? 'up' : n < 0 ? 'down' : '';
+
+    const rate = parseFloat(el('rate').value);
+    const showGbp = el('gbp').checked && rate > 0;
+    const gb = n => showGbp ? ` <span class="muted">(${n < 0 ? '−' : ''}${gbpFmt(Math.abs(n) * rate)})</span>` : '';
+
+    let summary = `Current value: <b>$${money(base)}</b>${gb(base)} (${qty} × $${money(price)})`;
+    if (hasCost) {
+      const pl = base - costTotal;
+      summary += ` &nbsp;|&nbsp; Cost: <b>$${money(costTotal)}</b>${gb(costTotal)} (${qty} × $${money(cost)})` +
+                 ` &nbsp;|&nbsp; P/L now: <b class="${color(pl)}">${sign(pl)}$${money(pl)}` +
+                 ` (${sign(pl)}${(pl / costTotal * 100).toFixed(2)}%)</b>${gb(pl)}`;
+    }
+    if (el('gbp').checked && !(rate > 0)) summary += '<br>Enter or fetch a USD→GBP rate to show £.';
+    el('summary').innerHTML = summary;
+    el('thead').innerHTML = '<tr><th>Move</th><th>Price</th><th>Value ($)</th>' +
+                            (showGbp ? '<th>Value (£)</th>' : '') + '<th>Change vs Now</th>' +
+                            (hasCost ? '<th>P/L vs Bought</th>' : '') +
+                            (hasCost && showGbp ? '<th>P/L (£)</th>' : '') + '</tr>';
+
+    for (let i = rows; i >= -rows; i--) {
+      const p = pct ? price * (1 + i * step / 100) : price + i * step;
+      if (p < 0) continue;
+      const value = qty * p;
+      const diff = value - base;
+      const cls = i > 0 ? 'up' : i < 0 ? 'down' : '';
+      const move = i === 0 ? 'Now' : (i > 0 ? '+' : '−') + +(Math.abs(i) * step).toFixed(4) + (pct ? '%' : '');
+      const tr = document.createElement('tr');
+      if (i === 0) tr.className = 'current';
+      let html = `<td class="${cls}">${move}</td><td>${money(p)}</td><td>${money(value)}</td>` +
+                 (showGbp ? `<td>${gbpFmt(value * rate)}</td>` : '') +
+                 `<td class="${cls}">${sign(diff)}${money(diff)}</td>`;
+      if (hasCost) {
+        const pl = value - costTotal;
+        html += `<td class="${color(pl)}">${sign(pl)}${money(pl)} (${sign(pl)}${(pl / costTotal * 100).toFixed(1)}%)</td>`;
+        if (showGbp) html += `<td class="${color(pl)}">${pl < 0 ? '−' : sign(pl)}${gbpFmt(Math.abs(pl) * rate)}</td>`;
+      }
+      tr.innerHTML = html;
+      tbody.appendChild(tr);
+    }
+  }
+
+  el('clear').onclick = () => {
+    localStorage.removeItem(KEY);
+    localStorage.removeItem('priceCache');
+    el('sym').value = ''; el('priceInfo').textContent = '';
+    el('qty').value = ''; el('cost').value = ''; el('price').value = '';
+    el('step').value = '1'; el('custom').value = '';el('mode').value = 'amt'; el('rows').value = '10';
+    el('gbp').checked = false; el('rate').value = ''; el('rateInfo').textContent = '';
+    render();
+  };
+
+  ids.filter(id => id !== 'rateInfoText').forEach(id => el(id).addEventListener('input', render));
+  el('gbp').addEventListener('change', () => {
+    if (el('gbp').checked && !el('rate').value) fetchRate(); else render();
+  });
+  el('refresh').onclick = fetchRate;
+  el('getPrice').onclick = fetchPrice;
+  el('sym').addEventListener('keydown', e => { if (e.key === 'Enter') fetchPrice(); });
+  load();
+  render();
+  if (!POLYGON_KEY) { el("symBox").style.display = "none"; el("getPrice").style.display = "none"; }
+  fetchPrice(); // one call per page load (only if a symbol is saved)
+  setInterval(fetchPrice, 5 * 60 * 1000 + 2000); // auto-refresh price every 5 min (just after cache expires)
+  if (el('gbp').checked) fetchRate();
+</script>
+</body>
+</html>

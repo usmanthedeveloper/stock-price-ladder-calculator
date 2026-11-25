@@ -1,0 +1,8 @@
+# Contains your Polygon API key — never commit
+config.js
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.vs/
